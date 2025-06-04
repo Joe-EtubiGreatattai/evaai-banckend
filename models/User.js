@@ -1,15 +1,14 @@
+// models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   fullName: {
     type: String,
-    required: [true, 'Please provide your full name'],
     trim: true,
   },
   email: {
     type: String,
-    required: [true, 'Please provide your email'],
     unique: true,
     lowercase: true,
     trim: true,
@@ -18,25 +17,33 @@ const userSchema = new mongoose.Schema({
       'Please provide a valid email',
     ],
   },
+  phoneNumber: {
+    type: String,
+    unique: true,
+    trim: true,
+    validate: {
+      validator: function(v) {
+        return /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/.test(v);
+      },
+      message: props => `${props.value} is not a valid phone number!`
+    }
+  },
   tradeType: {
     type: String,
-    required: [true, 'Please specify your trade type'],
-    enum: [
-      'Electrician',
-      'Plumber',
-      'Carpenter',
-      'HVAC',
-      'Painter',
-      'Landscaper',
-      'General Contractor',
-      'Other',
-    ],
+    trim: true
   },
   password: {
     type: String,
-    required: [true, 'Please provide a password'],
     minlength: 8,
     select: false,
+  },
+  isWhatsAppUser: {
+    type: Boolean,
+    default: false
+  },
+  whatsappProfileName: {
+    type: String,
+    trim: true
   },
   createdAt: {
     type: Date,
@@ -44,16 +51,13 @@ const userSchema = new mongoose.Schema({
   },
 });
 
-// Hash password before saving
-userSchema.pre('save', async function (next) {
+userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
-  
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// Method to compare passwords
-userSchema.methods.comparePassword = async function (candidatePassword) {
+userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

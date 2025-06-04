@@ -52,6 +52,7 @@ ACTION GUIDELINES:
 
 3. INVOICE MANAGEMENT:
 - Creation: "create invoice for [client]", "bill [client] [amount]", "new invoice"
+- Sending Existing: "send invoice to [client]", "email the invoice", "send him/her the invoice"
 - Identification: 
   - By ID: "inv_123"
   - By client: "John Smith" (most recent)
@@ -63,10 +64,18 @@ ACTION GUIDELINES:
   - Update: "update invoice for [client]", "change invoice amount"
 - Fetching: "show my invoices", "list unpaid invoices", "what invoices are due"
 
+IMPORTANT INVOICE SENDING RULES:
+- If user says "send [him/her/them] the invoice" or "email the invoice" → Use send_invoice action for the most recent/relevant invoice
+- If user provides a specific email address → Use that email
+- If no email provided, try to extract from conversation history or use client's known email
+- If creating AND sending an invoice → Use create_invoice with email parameter
+- If just sending existing invoice → Use send_invoice with invoiceId and email
+
 4. ACTION SELECTION RULES:
 - When calendar/scheduling terms are used → Event action
 - When money or billing is mentioned → Invoice action
 - When work or to-do items are mentioned → Task action
+- For "send invoice" commands → Check if invoice exists first, then use send_invoice
 - For ambiguous cases, ask for clarification
 
 CURRENT DATA:
@@ -83,12 +92,12 @@ ${formattedData.tasks.recent.map(t =>
 
 Invoices (${formattedData.invoices.all.length}):
 ${formattedData.invoices.all.slice(0, 5).map(i => 
-  `- ${i.client} ($${i.amount}) ${i.status} [ID: ${i.id}]`
+  `- ${i.client} ($${i.amount}) ${i.status} (Due: ${i.dueDate}) [ID: ${i.id}]`
 ).join('\n') || 'No invoices found'}
 
 RESPONSE FORMAT (JSON):
 {
-  "action": "create_event|create_task|create_invoice|update_event|...|fetch_tasks|fetch_events|fetch_invoices",
+  "action": "create_event|create_task|create_invoice|update_event|send_invoice|...|fetch_tasks|fetch_events|fetch_invoices",
   "params": {
     // For events:
     "eventId": "ID or 'Exact Title'",
@@ -110,6 +119,7 @@ RESPONSE FORMAT (JSON):
     "clientName": "Client name",
     "amount": 100.00,
     "dueDate": "YYYY-MM-DD",
+    "email": "recipient@email.com", // REQUIRED for sending invoices
     
     // Common:
     "description": "Optional details",
@@ -131,11 +141,17 @@ RESPONSE FORMAT (JSON):
   },
   "response": "Your natural language confirmation",
   "needsClarification": {
-    "field": "eventId/taskId/invoiceId/clientName/etc",
+    "field": "eventId/taskId/invoiceId/clientName/email/etc",
     "question": "What should I use for [field]?",
     "options": ["Option 1", "Option 2"]
   }
-}`;
+}
+
+CONTEXT ANALYSIS:
+- Look for email addresses in conversation history
+- Identify the most recent invoice when user says "send the invoice"
+- Extract client names and associate with their known email addresses
+- If sending an invoice but no email provided, ask for clarification`;
 
   // Prepare messages for OpenAI
   const messages = [
@@ -175,6 +191,29 @@ RESPONSE FORMAT (JSON):
     } 
     // Handle actions with additional validation
     else if (parsedResponse.action && parsedResponse.action !== 'none') {
+      // Enhanced validation for invoice sending
+      if (parsedResponse.action === 'send_invoice') {
+        if (!parsedResponse.params.email) {
+          // Try to extract email from conversation history or user context
+          const extractedEmail = extractEmailFromContext(conversationHistory, userContext);
+          if (extractedEmail) {
+            parsedResponse.params.email = extractedEmail;
+          } else {
+            throw new Error('Email address is required to send invoice. Please provide recipient email address.');
+          }
+        }
+        
+        if (!parsedResponse.params.invoiceId && !parsedResponse.params.clientName) {
+          // Find the most recent invoice
+          if (formattedData.invoices.all.length > 0) {
+            const recentInvoice = formattedData.invoices.all[0];
+            parsedResponse.params.invoiceId = recentInvoice.id;
+          } else {
+            throw new Error('No invoices found to send.');
+          }
+        }
+      }
+      
       // Skip validation for fetch actions
       if (!parsedResponse.action.includes('fetch')) {
         // Validate action type matches parameters
@@ -202,6 +241,9 @@ RESPONSE FORMAT (JSON):
         if (parsedResponse.action.includes('event')) {
           finalResponse = parsedResponse.response || 
             `Event "${actionResult.data?.title}" scheduled for ${actionResult.data?.startTime}.`;
+        } else if (parsedResponse.action === 'send_invoice') {
+          finalResponse = parsedResponse.response || 
+            `Invoice sent successfully to ${parsedResponse.params.email}${actionResult.data ? ` for ${actionResult.data.clientName}` : ''}.`;
         } else if (parsedResponse.action.includes('invoice')) {
           finalResponse = parsedResponse.response || 
             `Invoice processed successfully${actionResult.data ? ` for ${actionResult.data.clientName}` : ''}.`;
@@ -229,3 +271,24 @@ RESPONSE FORMAT (JSON):
   
   return { finalResponse, actionResult };
 };
+
+// Helper function to extract email from context
+function extractEmailFromContext(conversationHistory, userContext) {
+  // Check user's email first
+  if (userContext.user.email) {
+    return userContext.user.email;
+  }
+  
+  // Look for email patterns in conversation history
+  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
+  
+  for (let i = conversationHistory.length - 1; i >= 0; i--) {
+    const message = conversationHistory[i];
+    const emailMatch = message.text.match(emailRegex);
+    if (emailMatch) {
+      return emailMatch[0];
+    }
+  }
+  
+  return null;
+}

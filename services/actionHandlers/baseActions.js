@@ -27,7 +27,8 @@ exports.handleActionRequest = async (userId, action, params) => {
       case 'update_invoice':
       case 'mark_invoice_paid':
       case 'pay_invoice':
-      case 'send_invoice':
+      case 'send_invoice': // Added send_invoice action
+      case 'resend_invoice': // Added resend_invoice action
       case 'fetch_invoices': // Added fetch_invoices action
         return await invoiceActions.handleInvoiceAction(userId, action, params);
       

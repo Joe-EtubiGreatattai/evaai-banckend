@@ -10,7 +10,7 @@ const signToken = (id) => {
 
 exports.register = async (req, res, next) => {
   try {
-    const { fullName, email, tradeType, password } = req.body;
+    const { fullName, email, tradeType, password, phoneNumber } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -22,12 +22,13 @@ exports.register = async (req, res, next) => {
     }
 
     // Create new user
-    const newUser = await User.create({
-      fullName,
-      email,
-      tradeType,
-      password,
-    });
+const newUser = await User.create({
+  fullName,
+  email,
+  tradeType,
+  password,
+  phoneNumber
+});
 
     // Generate JWT token
     const token = signToken(newUser._id);
@@ -35,13 +36,14 @@ exports.register = async (req, res, next) => {
     res.status(201).json({
       status: 'success',
       token,
-      data: {
-        user: {
-          id: newUser._id,
-          fullName: newUser.fullName,
-          email: newUser.email,
-          tradeType: newUser.tradeType,
-        },
+     data: {
+  user: {
+    id: newUser._id,
+    fullName: newUser.fullName,
+    email: newUser.email,
+    tradeType: newUser.tradeType,
+    phoneNumber: newUser.phoneNumber
+  },
       },
     });
   } catch (err) {

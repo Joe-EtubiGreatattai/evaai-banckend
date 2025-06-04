@@ -205,8 +205,9 @@ exports.handleInvoiceAction = async (userId, action, params) => {
                 });
                 console.log('[handleInvoiceAction] Created invoice:', result);
                 
-                // Optionally send email on creation if sendEmail flag is true
-                if (params.sendEmail && params.email) {
+                // Check if email should be sent (either via sendEmail flag or email parameter)
+                const shouldSendEmail = params.sendEmail || params.email;
+                if (shouldSendEmail && params.email) {
                     console.log('[handleInvoiceAction] Sending email for new invoice');
                     const emailData = generateInvoiceEmail(result, params.email);
                     emailResult = await sendEmail(emailData);
@@ -264,8 +265,9 @@ exports.handleInvoiceAction = async (userId, action, params) => {
                 );
                 console.log('[handleInvoiceAction] Updated invoice:', result);
                 
-                // Optionally send email after update if requested
-                if (params.sendEmail && params.email) {
+                // Check if email should be sent (either via sendEmail flag or email parameter)
+                const shouldSendUpdateEmail = params.sendEmail || params.email;
+                if (shouldSendUpdateEmail && params.email) {
                     console.log('[handleInvoiceAction] Sending email for updated invoice');
                     const emailData = generateInvoiceEmail(result, params.email);
                     emailResult = await sendEmail(emailData);
@@ -301,8 +303,9 @@ exports.handleInvoiceAction = async (userId, action, params) => {
                 );
                 console.log('[handleInvoiceAction] Invoice marked as paid:', result);
                 
-                // Optionally send confirmation email if requested
-                if (params.sendEmail && params.email) {
+                // Check if email should be sent (either via sendEmail flag or email parameter)
+                const shouldSendPaidEmail = params.sendEmail || params.email;
+                if (shouldSendPaidEmail && params.email) {
                     console.log('[handleInvoiceAction] Sending payment confirmation email');
                     const emailData = {
                         to: params.email,
