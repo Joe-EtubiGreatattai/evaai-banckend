@@ -1,1 +1,2 @@
 # evaai-banckend
+# thinking
