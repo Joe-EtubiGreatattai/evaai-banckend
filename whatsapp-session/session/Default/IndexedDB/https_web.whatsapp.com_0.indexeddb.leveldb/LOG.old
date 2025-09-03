@@ -1,0 +1,19 @@
+2025/09/03-02:34:47.091 ad03 Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/03-02:34:47.092 ad03 Recovering log #182
+2025/09/03-02:34:47.109 ad03 Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000182.log 
+2025/09/03-02:34:48.860 8003 Level-0 table #190: started
+2025/09/03-02:34:48.891 8003 Level-0 table #190: 238321 bytes OK
+2025/09/03-02:34:48.932 8003 Delete type=0 #182
+2025/09/03-02:34:48.932 8003 Manual compaction at level-0 from '\x002\x00\x00\x00' @ 72057594037927935 : 1 .. '\x003\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/03-02:34:50.818 1f70b Compacting 1@1 + 4@2 files
+2025/09/03-02:34:50.887 1f70b Generated table #191@1: 33752 keys, 2187381 bytes
+2025/09/03-02:34:50.969 1f70b Generated table #192@1: 17996 keys, 2191092 bytes
+2025/09/03-02:34:51.053 1f70b Generated table #193@1: 77179 keys, 2220993 bytes
+2025/09/03-02:34:51.101 1f70b Generated table #194@1: 29018 keys, 587289 bytes
+2025/09/03-02:34:51.101 1f70b Compacted 1@1 + 4@2 files => 7186755 bytes
+2025/09/03-02:34:51.142 1f70b compacted to: files[ 0 0 4 0 0 0 0 ]
+2025/09/03-02:34:51.142 1f70b Delete type=2 #185
+2025/09/03-02:34:51.142 1f70b Delete type=2 #184
+2025/09/03-02:34:51.142 1f70b Delete type=2 #190
+2025/09/03-02:34:51.142 1f70b Delete type=2 #186
+2025/09/03-02:34:51.142 1f70b Delete type=2 #187

@@ -1,0 +1,34 @@
+2025/09/03-02:46:23.844 11803 Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/03-02:46:23.844 11803 Recovering log #189
+2025/09/03-02:46:23.874 11803 Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000189.log 
+2025/09/03-02:46:25.802 fb03 Level-0 table #197: started
+2025/09/03-02:46:25.838 fb03 Level-0 table #197: 466294 bytes OK
+2025/09/03-02:46:25.886 fb03 Delete type=0 #189
+2025/09/03-02:46:25.886 fb03 Manual compaction at level-0 from '\x003\x00\x00\x00' @ 72057594037927935 : 1 .. '\x004\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/03-02:46:27.725 1eb03 Compacting 1@1 + 4@2 files
+2025/09/03-02:46:27.818 1eb03 Generated table #198@1: 35241 keys, 2188293 bytes
+2025/09/03-02:46:27.883 1eb03 Generated table #199@1: 17913 keys, 2192484 bytes
+2025/09/03-02:46:27.970 1eb03 Generated table #200@1: 73535 keys, 2215114 bytes
+2025/09/03-02:46:28.043 1eb03 Generated table #201@1: 32992 keys, 667659 bytes
+2025/09/03-02:46:28.044 1eb03 Compacted 1@1 + 4@2 files => 7263550 bytes
+2025/09/03-02:46:28.087 1eb03 compacted to: files[ 0 0 4 0 0 0 0 ]
+2025/09/03-02:46:28.089 1eb03 Delete type=2 #197
+2025/09/03-02:46:28.089 1eb03 Delete type=2 #194
+2025/09/03-02:46:28.089 1eb03 Delete type=2 #191
+2025/09/03-02:46:28.089 1eb03 Delete type=2 #192
+2025/09/03-02:46:28.089 1eb03 Delete type=2 #193
+2025/09/03-07:39:18.233 a857 Level-0 table #203: started
+2025/09/03-07:39:18.497 a857 Level-0 table #203: 1355212 bytes OK
+2025/09/03-07:39:18.555 a857 Delete type=0 #196
+2025/09/03-07:39:20.309 5117 Compacting 1@1 + 4@2 files
+2025/09/03-07:39:21.079 5117 Generated table #204@1: 40044 keys, 2195344 bytes
+2025/09/03-07:39:21.566 5117 Generated table #205@1: 16050 keys, 2186218 bytes
+2025/09/03-07:39:22.214 5117 Generated table #206@1: 62677 keys, 2205041 bytes
+2025/09/03-07:39:22.561 5117 Generated table #207@1: 46220 keys, 933043 bytes
+2025/09/03-07:39:22.561 5117 Compacted 1@1 + 4@2 files => 7519646 bytes
+2025/09/03-07:39:22.609 5117 compacted to: files[ 0 0 4 0 0 0 0 ]
+2025/09/03-07:39:22.612 5117 Delete type=2 #203
+2025/09/03-07:39:22.612 5117 Delete type=2 #200
+2025/09/03-07:39:22.612 5117 Delete type=2 #201
+2025/09/03-07:39:22.612 5117 Delete type=2 #198
+2025/09/03-07:39:22.613 5117 Delete type=2 #199

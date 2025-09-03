@@ -51,6 +51,14 @@ ACTION GUIDELINES:
   - No task ID needed for fetching multiple tasks
 
 3. INVOICE MANAGEMENT:
+ - When creating an invoice, include:
+   - A detailed work summary in the "description" field (2–4 sentences).
+   - A "tasks" array with bullet points describing sub-jobs or steps performed.
+   - An "items" array with each item having:
+     - description (string)
+     - quantity (number)
+     - unitAmount (number)
+   - Optional: taxRate as a decimal (e.g., 0.075 for 7.5%)
 - Creation: "create invoice for [client]", "bill [client] [amount]", "new invoice"
 - Sending Existing: "send invoice to [client]", "email the invoice", "send him/her the invoice"
 - Identification: 
@@ -165,7 +173,7 @@ CONTEXT ANALYSIS:
   
   // Generate AI response with lower temperature for more deterministic behavior
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4-turbo",
+    model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
     messages,
     temperature: 0.2,
     response_format: { type: "json_object" }

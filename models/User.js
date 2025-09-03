@@ -22,15 +22,16 @@ const userSchema = new mongoose.Schema({
     unique: true,
     trim: true,
     validate: {
-      validator: function(v) {
-        return /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/.test(v);
+      validator: function (v) {
+        // Accepts plain numbers 10–15 digits (e.g., WhatsApp numbers like 2348146139334)
+        return /^\d{10,15}$/.test(v);
       },
-      message: props => `${props.value} is not a valid phone number!`
-    }
+      message: props => `${props.value} is not a valid phone number!`,
+    },
   },
   tradeType: {
     type: String,
-    trim: true
+    trim: true,
   },
   password: {
     type: String,
@@ -39,11 +40,11 @@ const userSchema = new mongoose.Schema({
   },
   isWhatsAppUser: {
     type: Boolean,
-    default: false
+    default: false,
   },
   whatsappProfileName: {
     type: String,
-    trim: true
+    trim: true,
   },
   createdAt: {
     type: Date,
@@ -51,13 +52,15 @@ const userSchema = new mongoose.Schema({
   },
 });
 
-userSchema.pre('save', async function(next) {
+// 🔐 Encrypt password before saving (if changed)
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-userSchema.methods.comparePassword = async function(candidatePassword) {
+// 🔐 Password checker method
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

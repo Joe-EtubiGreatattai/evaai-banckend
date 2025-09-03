@@ -1,17 +1,14 @@
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 
-// Get email credentials from environment variables
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASSWORD = process.env.EMAIL_PASS;
 
-// Verify environment variables
 if (!EMAIL_USER || !EMAIL_PASSWORD) {
   console.error("Missing EMAIL_USER or EMAIL_PASS in environment variables.");
   process.exit(1);
 }
 
-// Create a transporter object using SMTP
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -27,10 +24,11 @@ const transporter = nodemailer.createTransport({
  * @param {string} emailData.subject - Email subject
  * @param {string} [emailData.text] - Plain text body
  * @param {string} [emailData.html] - HTML body
+ * @param {Array} [emailData.attachments] - Optional list of attachments (e.g., PDF buffer)
  * @returns {Promise<Object>} - Promise that resolves with send info or rejects with error
  */
 const sendEmail = async (emailData) => {
-  const { to, subject, text, html } = emailData;
+  const { to, subject, text, html, attachments } = emailData;
 
   if (!to || !subject || (!text && !html)) {
     throw new Error("Missing required fields: to, subject, text or html");
@@ -42,6 +40,7 @@ const sendEmail = async (emailData) => {
     subject,
     text,
     html,
+    attachments, // 🔥 this line adds support for PDF or other file attachments
   };
 
   try {

@@ -34,6 +34,27 @@ const invoiceSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Description cannot be more than 500 characters']
   },
+  tasks: {
+    type: [String],
+    default: []
+  },
+  items: {
+    type: [
+      {
+        description: { type: String },
+        quantity: { type: Number, default: 1 },
+        unitAmount: { type: Number, default: 0 },
+        accountCode: { type: String, default: '200' },
+        taxAmount: { type: Number, default: 0 },
+        lineAmount: { type: Number }
+      }
+    ],
+    default: []
+  },
+  taxRate: {
+    type: Number,
+    default: 0
+  },
   user: {
     type: mongoose.Schema.ObjectId,
     ref: 'User',
@@ -51,34 +72,34 @@ invoiceSchema.index({ status: 1 });
 invoiceSchema.index({ date: 1 });
 
 // Calculate status before saving
-invoiceSchema.pre('save', function(next) {
+invoiceSchema.pre('save', function (next) {
   const now = new Date();
-  
+
   // If manually setting to Paid, ensure paidDate is set
   if (this.status === 'Paid' && !this.paidDate) {
     this.paidDate = now;
   }
-  
+
   // If due date passed and not paid, mark as overdue
   if (this.status !== 'Paid' && this.dueDate < now) {
     this.status = 'Overdue';
   }
-  
+
   next();
 });
 
 // Add query helper for paid invoices
-invoiceSchema.query.paid = function() {
+invoiceSchema.query.paid = function () {
   return this.where({ status: 'Paid' });
 };
 
 // Add query helper for pending invoices
-invoiceSchema.query.pending = function() {
+invoiceSchema.query.pending = function () {
   return this.where({ status: 'Pending' });
 };
 
 // Add query helper for overdue invoices
-invoiceSchema.query.overdue = function() {
+invoiceSchema.query.overdue = function () {
   return this.where({ status: 'Overdue' });
 };
 
