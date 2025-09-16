@@ -108,7 +108,7 @@ if (sslOptions.key && sslOptions.cert) {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🌐 Visit: http://localhost:${PORT}`);
   });
-}
+}   
 
 // ======================
 // ✅ WhatsApp Web Setup
