@@ -17,9 +17,9 @@ const openai = new OpenAI({
 
 exports.sendMessage = catchAsync(async (req, res, next) => {
   const { text } = req.body;
-  console.log('🟡 [sendMessage] Function called');
-  console.log('🔹 Request user ID:', req.user?.id);
-  console.log('🔹 Incoming text:', text);
+  // console.log('🟡 [sendMessage] Function called');
+  // console.log('🔹 Request user ID:', req.user?.id);
+  // console.log('🔹 Incoming text:', text);
 
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
     console.warn('❗ [Validation] Invalid or empty message text:', text);
@@ -33,9 +33,7 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
     if (!conversation) {
       console.log('ℹ️ [Conversation] No conversation found. Creating a new one for user:', req.user.id);
       conversation = await Conversation.create({ user: req.user.id });
-      console.log('✅ [Conversation] New conversation created:', conversation._id);
     } else {
-      console.log('✅ [Conversation] Existing conversation found:', conversation._id);
     }
   } catch (err) {
     console.error('❌ [Conversation] Error retrieving or creating conversation:', err);
@@ -51,7 +49,6 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
       conversation: conversation._id,
       user: req.user.id
     });
-    console.log('✅ [Message] User message saved:', userMessage._id);
   } catch (err) {
     console.error('❌ [Message] Failed to save user message:', err);
     return next(new AppError('Failed to save user message', 500));
@@ -66,8 +63,7 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
         .select('text sender createdAt'),
       getUserContextData(req.user.id)
     ]);
-    console.log(`✅ [History] Retrieved ${conversationHistory.length} messages`);
-    console.log('✅ [Context] User context retrieved:', userContext);
+  
   } catch (err) {
     console.error('❌ [Data Fetch] Error fetching history or context:', err);
     return next(new AppError('Failed to retrieve conversation history or context', 500));
@@ -82,7 +78,6 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
       conversationHistory,
       text.trim()
     ));
-    console.log('✅ [AI] Response generated:', finalResponse);
     if (actionResult) console.log('ℹ️ [AI] Action result returned:', actionResult);
   } catch (err) {
     console.error('❌ [AI] Error generating AI response:', err);
@@ -98,14 +93,12 @@ exports.sendMessage = catchAsync(async (req, res, next) => {
       conversation: conversation._id,
       user: req.user.id
     });
-    console.log('✅ [Message] Assistant message saved:', assistantMessage._id);
-  } catch (err) {
+   } catch (err) {
     console.error('❌ [Message] Failed to save assistant message:', err);
     return next(new AppError('Failed to save assistant message', 500));
   }
 
   // Final response to client
-  console.log('🟢 [sendMessage] Response ready to be sent to client');
   res.status(201).json({
     status: 'success',
     data: {

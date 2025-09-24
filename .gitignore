@@ -16,6 +16,8 @@ logs/
 .DS_Store
 Thumbs.db
 
+whatsapp-session/
+
 /whatsapp-session
 
 # Build output

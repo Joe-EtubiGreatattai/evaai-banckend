@@ -1,107 +1,109 @@
+// models/Invoice.js
 const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-const invoiceSchema = new mongoose.Schema({
-  clientName: {
-    type: String,
-    required: [true, 'Please provide client name'],
-    trim: true,
-    maxlength: [100, 'Client name cannot be more than 100 characters']
+/* ---------- Subdocs ---------- */
+const BrandSchema = new Schema(
+  {
+    name: String,
+    tradingName: String,
+    address: String,
+    email: String,
+    phone: String,
+    number: String,       // company registration number
+    vatNumber: String
   },
-  amount: {
-    type: Number,
-    required: [true, 'Please provide invoice amount'],
-    min: [0, 'Amount cannot be negative']
-  },
-  status: {
-    type: String,
-    enum: ['Pending', 'Paid', 'Overdue'],
-    default: 'Pending'
-  },
-  date: {
-    type: Date,
-    required: [true, 'Please provide invoice date'],
-    default: Date.now
-  },
-  dueDate: {
-    type: Date,
-    required: [true, 'Please provide due date']
-  },
-  paidDate: {
-    type: Date
-  },
-  description: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Description cannot be more than 500 characters']
-  },
-  tasks: {
-    type: [String],
-    default: []
-  },
-  items: {
-    type: [
-      {
-        description: { type: String },
-        quantity: { type: Number, default: 1 },
-        unitAmount: { type: Number, default: 0 },
-        accountCode: { type: String, default: '200' },
-        taxAmount: { type: Number, default: 0 },
-        lineAmount: { type: Number }
-      }
-    ],
-    default: []
-  },
-  taxRate: {
-    type: Number,
-    default: 0
-  },
-  user: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+  { _id: false }
+);
 
-// Indexes for faster querying
-invoiceSchema.index({ user: 1 });
-invoiceSchema.index({ status: 1 });
-invoiceSchema.index({ date: 1 });
+const ItemSchema = new Schema(
+  {
+    description: String,
+    quantity: { type: Number, default: 1 },
+    unitAmount: { type: Number, default: 0 },
+    accountCode: String,
+    vatPercent: Number,
+    taxAmount: Number,
+    lineAmount: Number
+  },
+  { _id: false }
+);
 
-// Calculate status before saving
-invoiceSchema.pre('save', function (next) {
-  const now = new Date();
+/* ---------- Main schema ---------- */
+const InvoiceSchema = new Schema(
+  {
+    // client
+    clientName: String,
+    clientEmail: String,
+    clientAddress: String,
 
-  // If manually setting to Paid, ensure paidDate is set
-  if (this.status === 'Paid' && !this.paidDate) {
-    this.paidDate = now;
-  }
+    // money
+    amount: Number,
+    currency: { type: String, default: 'GBP' },
+    description: String,
+    items: [ItemSchema],
+    tasks: { type: Array, default: [] },
 
-  // If due date passed and not paid, mark as overdue
-  if (this.status !== 'Paid' && this.dueDate < now) {
-    this.status = 'Overdue';
-  }
+    // tax
+    reverseCharge: { type: Boolean, default: false },
+    vatPercent: Number,
+    taxRate: Number,
+    taxAmount: Number,
+    discountAmount: Number,
 
-  next();
-});
+    // issuer branding (rendered in PDF)
+    brand: BrandSchema,
+    businessName: String,
+    businessEmail: String,
+    businessPhone: String,
+    businessAddress: String,
+    companyNumber: String,
+    vatNumber: String,
 
-// Add query helper for paid invoices
-invoiceSchema.query.paid = function () {
-  return this.where({ status: 'Paid' });
-};
+    // bank / payment (Payment Details - BACs)
+    bankName: String,
+    bankAddress: String,
+    accountName: String,
+    accountNumber: String,
+    sortCode: String,
+    iban: String,
+    swiftBIC: String,
+    paymentReference: String,
+    paymentMethod: { type: String, default: 'BACs' },
 
-// Add query helper for pending invoices
-invoiceSchema.query.pending = function () {
-  return this.where({ status: 'Pending' });
-};
+    // visuals
+    logoUrl: String,
+    logoDataUrl: String,
 
-// Add query helper for overdue invoices
-invoiceSchema.query.overdue = function () {
-  return this.where({ status: 'Overdue' });
-};
+    // meta
+    invoiceNumber: String,
+    reference: String,
+    status: { type: String, default: 'Pending' },
 
-const Invoice = mongoose.model('Invoice', invoiceSchema);
-module.exports = Invoice;
+    // dates
+    date: Date,
+    dueDate: Date,
+    paidDate: Date,
+    lastSent: Date,
+    sentTo: String,
+
+    // xero linkage
+    xeroInvoiceId: String,
+    xeroReference: String,
+    xeroStatus: String,
+    xeroSyncError: String,
+    xeroSyncErrorDetails: String,
+
+    // ownership
+    user: { type: Schema.Types.ObjectId, ref: 'User', index: true }
+  },
+  { timestamps: true }
+);
+
+/* ---------- Indexes ---------- */
+InvoiceSchema.index({ user: 1, createdAt: -1 });
+InvoiceSchema.index({ invoiceNumber: 1, user: 1 }, { sparse: true });
+
+/* ---------- Export ---------- */
+module.exports =
+  mongoose.models.Invoice || mongoose.model('Invoice', InvoiceSchema);

@@ -1,8 +1,9 @@
-// baseActions.js (replace file)
+// baseActions.js
 const taskActions = require('./taskActions');
 const invoiceActions = require('./invoiceActions');
 const eventActions = require('./eventActions');
 const chatActions = require('./chatActions');
+const User = require('../../models/User');
 
 const validateParams = (requiredFields, providedParams) => {
   const missingFields = requiredFields.filter(field => !providedParams[field]);
@@ -11,7 +12,38 @@ const validateParams = (requiredFields, providedParams) => {
 
 exports.handleActionRequest = async (userId, action, params) => {
   try {
-    switch (action.type || action.action) {
+    const type = action.type || action.action;
+
+    // Pre-hook: enrich invoice actions with phoneNumber and log full user
+    const isInvoiceAction = [
+      'create_invoice',
+      'update_invoice',
+      'mark_invoice_paid',
+      'pay_invoice',
+      'send_invoice',
+      'resend_invoice',
+      'fetch_invoices'
+    ].includes(type);
+
+    if (isInvoiceAction) {
+      params = params || {};
+      try {
+        const userDoc = await User.findById(userId).lean();
+        if (userDoc) {
+          if (!params.phoneNumber && userDoc.phoneNumber) {
+            params.phoneNumber = userDoc.phoneNumber;
+            console.log('[invoice:params] injecting phoneNumber from user record', params.phoneNumber);
+          }
+          console.log('[invoice:user] full user document', userDoc);
+        } else {
+          console.warn('[invoice:user] no user found for userId', userId);
+        }
+      } catch (e) {
+        console.error('[invoice:user] failed to load user for phone enrichment:', e?.message || e);
+      }
+    }
+
+    switch (type) {
       // Task
       case 'create_task':
       case 'update_task':
@@ -39,13 +71,12 @@ exports.handleActionRequest = async (userId, action, params) => {
       case 'fetch_events':
         return await eventActions.handleEventAction(userId, action, params);
 
-      // Free text / explicit chat
+      // Chat
       case 'chat':
       case 'nlu':
       case 'free_text':
         return await chatActions.handleChatAction(userId, action, params);
 
-      // Fallback: default to chat if model/user didn’t specify a known action
       default: {
         const prompt =
           params?.prompt ??
