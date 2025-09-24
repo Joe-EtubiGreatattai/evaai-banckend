@@ -1,46 +1,15 @@
-2025/09/24-13:34:32.087 14003 Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2025/09/24-13:34:32.088 14003 Recovering log #3038
-2025/09/24-13:34:32.120 14003 Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/003038.log 
-2025/09/24-13:34:33.960 14003 Level-0 table #3058: started
-2025/09/24-13:34:33.996 14003 Level-0 table #3058: 452767 bytes OK
-2025/09/24-13:34:34.047 14003 Delete type=0 #3038
-2025/09/24-13:34:34.048 14003 Manual compaction at level-0 from '\x00t\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00u\x00\x00\x00' @ 0 : 0; will stop at '\x00t\x00\x00\x05' @ 10631574 : 1
-2025/09/24-13:34:34.048 14003 Compacting 1@0 + 5@1 files
-2025/09/24-13:34:34.081 14003 Generated table #3059@0: 8933 keys, 184269 bytes
-2025/09/24-13:34:34.120 14003 Generated table #3060@0: 256 keys, 2115986 bytes
-2025/09/24-13:34:34.143 14003 Generated table #3061@0: 708 keys, 25202 bytes
-2025/09/24-13:34:34.165 14003 Generated table #3062@0: 718 keys, 11983 bytes
-2025/09/24-13:34:34.187 14003 Generated table #3063@0: 806 keys, 14172 bytes
-2025/09/24-13:34:34.209 14003 Generated table #3064@0: 229 keys, 12485 bytes
-2025/09/24-13:34:34.209 14003 Compacted 1@0 + 5@1 files => 2364097 bytes
-2025/09/24-13:34:34.255 14003 compacted to: files[ 0 6 55 0 0 0 0 ]
-2025/09/24-13:34:34.257 14003 Delete type=2 #3058
-2025/09/24-13:34:34.258 14003 Manual compaction at level-0 from '\x00t\x00\x00\x05' @ 10631574 : 1 .. '\x00u\x00\x00\x00' @ 0 : 0; will stop at (end)
-2025/09/24-13:34:36.037 14103 Compacting 1@1 + 9@2 files
-2025/09/24-13:34:36.142 14103 Generated table #3065@1: 89005 keys, 2240499 bytes
-2025/09/24-13:34:36.259 14103 Generated table #3066@1: 97476 keys, 2249287 bytes
-2025/09/24-13:34:36.523 14103 Generated table #3067@1: 101588 keys, 2255243 bytes
-2025/09/24-13:34:36.636 14103 Generated table #3068@1: 21779 keys, 2258100 bytes
-2025/09/24-13:34:36.681 14103 Generated table #3069@1: 344 keys, 2129087 bytes
-2025/09/24-13:34:36.722 14103 Generated table #3070@1: 230 keys, 2114402 bytes
-2025/09/24-13:34:36.756 14103 Generated table #3071@1: 179 keys, 2123644 bytes
-2025/09/24-13:34:36.848 14103 Generated table #3072@1: 23483 keys, 2196888 bytes
-2025/09/24-13:34:36.892 14103 Generated table #3073@1: 4039 keys, 2120140 bytes
-2025/09/24-13:34:36.914 14103 Generated table #3074@1: 404 keys, 35048 bytes
-2025/09/24-13:34:36.914 14103 Compacted 1@1 + 9@2 files => 19722338 bytes
-2025/09/24-13:34:36.954 14103 compacted to: files[ 0 5 56 0 0 0 0 ]
-2025/09/24-13:34:36.955 14103 Delete type=2 #3044
-2025/09/24-13:34:36.955 14103 Delete type=2 #3050
-2025/09/24-13:34:36.955 14103 Delete type=2 #3051
-2025/09/24-13:34:36.955 14103 Delete type=2 #3045
-2025/09/24-13:34:36.955 14103 Delete type=2 #3053
-2025/09/24-13:34:36.955 14103 Delete type=2 #3047
-2025/09/24-13:34:36.955 14103 Delete type=2 #3046
-2025/09/24-13:34:36.955 14103 Delete type=2 #3052
-2025/09/24-13:34:36.955 14103 Delete type=2 #3042
-2025/09/24-13:34:36.955 14103 Delete type=2 #3043
-2025/09/24-13:34:36.955 14103 Delete type=2 #3041
-2025/09/24-13:34:36.955 14103 Delete type=2 #3054
-2025/09/24-13:34:36.955 14103 Delete type=2 #3059
-2025/09/24-13:34:36.955 14103 Delete type=2 #3048
-2025/09/24-13:34:36.955 14103 Delete type=2 #3049
+2025/09/24-16:40:10.219 fd03 Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/24-16:40:10.220 fd03 Recovering log #52
+2025/09/24-16:40:10.228 fd03 Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000052.log 
+2025/09/24-16:40:12.614 15703 Level-0 table #58: started
+2025/09/24-16:40:12.640 15703 Level-0 table #58: 103819 bytes OK
+2025/09/24-16:40:12.687 15703 Delete type=0 #52
+2025/09/24-16:40:12.688 15703 Manual compaction at level-0 from '\x00\x1a\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1b\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/09/24-16:40:15.399 13b03 Compacting 1@1 + 2@2 files
+2025/09/24-16:40:15.539 13b03 Generated table #59@1: 32671 keys, 2196976 bytes
+2025/09/24-16:40:15.584 13b03 Generated table #60@1: 13352 keys, 417571 bytes
+2025/09/24-16:40:15.584 13b03 Compacted 1@1 + 2@2 files => 2614547 bytes
+2025/09/24-16:40:15.627 13b03 compacted to: files[ 0 0 2 0 0 0 0 ]
+2025/09/24-16:40:15.627 13b03 Delete type=2 #58
+2025/09/24-16:40:15.627 13b03 Delete type=2 #54
+2025/09/24-16:40:15.627 13b03 Delete type=2 #55

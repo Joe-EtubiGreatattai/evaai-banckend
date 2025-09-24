@@ -3,7 +3,10 @@ const taskActions = require('./taskActions');
 const invoiceActions = require('./invoiceActions');
 const eventActions = require('./eventActions');
 const chatActions = require('./chatActions');
+
 const User = require('../../models/User');
+const Event = require('../../models/Event');
+const Task = require('../../models/Task');
 
 const validateParams = (requiredFields, providedParams) => {
   const missingFields = requiredFields.filter(field => !providedParams[field]);
@@ -14,7 +17,7 @@ exports.handleActionRequest = async (userId, action, params) => {
   try {
     const type = action.type || action.action;
 
-    // Pre-hook: enrich invoice actions with phoneNumber and log full user
+    // Pre-hook: enrich invoice actions with phoneNumber and log full user + their events and tasks
     const isInvoiceAction = [
       'create_invoice',
       'update_invoice',
@@ -29,29 +32,70 @@ exports.handleActionRequest = async (userId, action, params) => {
       params = params || {};
       try {
         const userDoc = await User.findById(userId).lean();
+
         if (userDoc) {
           if (!params.phoneNumber && userDoc.phoneNumber) {
             params.phoneNumber = userDoc.phoneNumber;
             console.log('[invoice:params] injecting phoneNumber from user record', params.phoneNumber);
           }
-          console.log('[invoice:user] full user document', userDoc);
+
+          // Log user, events, and tasks in the SAME if-statement
+          const [events, tasks] = await Promise.all([
+            Event.find({ user: userDoc._id }).sort({ startTime: 1 }).lean(),
+            Task.find({ user: userDoc._id }).sort({ createdAt: -1 }).lean()
+          ]);
+
+          console.log('[invoice:user] full user document', userDoc, {
+            eventCount: events.length,
+            taskCount: tasks.length
+          });
+          console.log('[invoice:user:events]', events);
+          console.log('[invoice:user:tasks]', tasks);
         } else {
           console.warn('[invoice:user] no user found for userId', userId);
         }
       } catch (e) {
-        console.error('[invoice:user] failed to load user for phone enrichment:', e?.message || e);
+        console.error('[invoice:user] failed to load user and related docs:', e?.message || e);
       }
     }
 
     switch (type) {
+      // Optional utility: fetch both via a single action
+      case 'fetch_user_events_and_tasks': {
+        try {
+          const [events, tasks] = await Promise.all([
+            Event.find({ user: userId }).sort({ startTime: 1 }).lean(),
+            Task.find({ user: userId }).sort({ createdAt: -1 }).lean()
+          ]);
+
+          console.log('[events:all] userId:', userId, 'count:', events.length);
+          console.log('[events:all] documents:', events);
+          console.log('[tasks:all] userId:', userId, 'count:', tasks.length);
+          console.log('[tasks:all] documents:', tasks);
+
+          return {
+            success: true,
+            events,
+            tasks,
+            counts: { events: events.length, tasks: tasks.length }
+          };
+        } catch (e) {
+          console.error('[fetch_user_events_and_tasks] failed:', e?.message || e);
+          return { success: false, error: e?.message || String(e) };
+        }
+      }
+
       // Task
       case 'create_task':
       case 'update_task':
       case 'complete_task':
       case 'uncomplete_task':
       case 'reopen_task':
-      case 'fetch_tasks':
-        return await taskActions.handleTaskAction(userId, action, params);
+      case 'fetch_tasks': {
+        const res = await taskActions.handleTaskAction(userId, action, params);
+        try { console.log('[tasks:handler:result]', res); } catch (_) {}
+        return res;
+      }
 
       // Invoice
       case 'create_invoice':
@@ -68,8 +112,11 @@ exports.handleActionRequest = async (userId, action, params) => {
       case 'update_event':
       case 'cancel_event':
       case 'delete_event':
-      case 'fetch_events':
-        return await eventActions.handleEventAction(userId, action, params);
+      case 'fetch_events': {
+        const res = await eventActions.handleEventAction(userId, action, params);
+        try { console.log('[events:handler:result]', res); } catch (_) {}
+        return res;
+      }
 
       // Chat
       case 'chat':

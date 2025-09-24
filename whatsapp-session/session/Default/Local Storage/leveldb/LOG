@@ -1,6 +1,3 @@
-2025/09/24-13:37:40.492 1070f Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/Local Storage/leveldb/MANIFEST-000001
-2025/09/24-13:37:40.492 1070f Recovering log #29
-2025/09/24-13:37:40.493 1070f Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/Local Storage/leveldb/000029.log 
-2025/09/24-13:47:49.277 2217 Level-0 table #34: started
-2025/09/24-13:47:49.304 2217 Level-0 table #34: 16195 bytes OK
-2025/09/24-13:47:49.346 2217 Delete type=0 #29
+2025/09/24-16:44:07.277 8103 Reusing MANIFEST /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/Local Storage/leveldb/MANIFEST-000001
+2025/09/24-16:44:07.278 8103 Recovering log #3
+2025/09/24-16:44:07.278 8103 Reusing old log /Users/mac/Documents/eveai/backend/contractor-auth-backend/whatsapp-session/session/Default/Local Storage/leveldb/000003.log 
