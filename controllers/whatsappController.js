@@ -19,19 +19,18 @@ async function handleWhatsAppMessage(msg) {
     const senderId = msg.from;
     const rawPhone = senderId.split('@')[0];
 
-    let user = await User.findOne({ phoneNumber: rawPhone });
+    // Normalize phone number to match the User schema format
+    const normalizedPhone = String(rawPhone).replace(/\D/g, '');
+    
+    // Check if user exists in database (only respond to registered users)
+    let user = await User.findOne({ phoneNumber: normalizedPhone });
 
     if (!user) {
-      console.log(`👤 No user found for ${rawPhone}. Creating one...`);
-      user = await User.create({
-        phoneNumber: rawPhone,
-        fullName: 'WhatsApp User',
-        email: `whatsapp.${rawPhone}@eveai.ai`,
-        isWhatsAppUser: true,
-        whatsappProfileName: 'WhatsApp User'
-      });
-      console.log(`✅ User created with ID: ${user._id}`);
+      console.log(`❌ Ignoring message from unregistered user: ${normalizedPhone}`);
+      return; // Silently exit without responding
     }
+
+    console.log(`✅ Registered user found: ${user.fullName} (${user.phoneNumber})`);
 
     let messageText = msg.body || '';
     let userUsedVoiceNote = false;
@@ -193,7 +192,10 @@ async function handleWhatsAppMessage(msg) {
 
   } catch (error) {
     console.error('💥 Fatal error in message handler:', error);
-    msg.reply('Something went wrong on our end.');
+    // Don't send any response for errors either to unregistered users
+    if (user) { // Only respond if user exists (was found earlier)
+      msg.reply('Something went wrong on our end.');
+    }
   }
 }
 

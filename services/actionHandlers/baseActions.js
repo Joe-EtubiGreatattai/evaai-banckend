@@ -45,12 +45,12 @@ exports.handleActionRequest = async (userId, action, params) => {
             Task.find({ user: userDoc._id }).sort({ createdAt: -1 }).lean()
           ]);
 
-          console.log('[invoice:user] full user document', userDoc, {
-            eventCount: events.length,
-            taskCount: tasks.length
-          });
-          console.log('[invoice:user:events]', events);
-          console.log('[invoice:user:tasks]', tasks);
+          // console.log('[invoice:user] full user document', userDoc, {
+          //   eventCount: events.length,
+          //   taskCount: tasks.length
+          // });
+          // console.log('[invoice:user:events]', events);
+          // console.log('[invoice:user:tasks]', tasks);
         } else {
           console.warn('[invoice:user] no user found for userId', userId);
         }
@@ -68,10 +68,10 @@ exports.handleActionRequest = async (userId, action, params) => {
             Task.find({ user: userId }).sort({ createdAt: -1 }).lean()
           ]);
 
-          console.log('[events:all] userId:', userId, 'count:', events.length);
-          console.log('[events:all] documents:', events);
-          console.log('[tasks:all] userId:', userId, 'count:', tasks.length);
-          console.log('[tasks:all] documents:', tasks);
+          // console.log('[events:all] userId:', userId, 'count:', events.length);
+          // console.log('[events:all] documents:', events);
+          // console.log('[tasks:all] userId:', userId, 'count:', tasks.length);
+          // console.log('[tasks:all] documents:', tasks);
 
           return {
             success: true,

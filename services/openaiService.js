@@ -7,8 +7,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /** In-memory per-process store of pending invoice data. */
 const invoiceDrafts = new Map(); // key: userId -> draft
+/** Track the user's most recently created or edited invoice to support "modify the invoice ..." */
+const currentInvoiceByUser = new Map(); // key: userId -> { id, snapshot }
 
-// ---------- utils ----------
+/* ---------- utils ---------- */
 function safeStringify(obj) { try { return JSON.stringify(obj); } catch { return '[unserializable]'; } }
 function tryParseJSON(input) {
   if (!input) return null;
@@ -19,22 +21,55 @@ function tryParseJSON(input) {
   if (!m) return null;
   try { return JSON.parse(m[0]); } catch { return null; }
 }
-function extractEmailFromContext(conversationHistory = [], userContext = {}) {
-  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
-  if (userContext && typeof userContext === 'object') {
-    const flat = JSON.stringify(userContext);
-    const m = flat.match(emailRegex);
-    if (m) return m[0];
-  }
-  for (let i = conversationHistory.length - 1; i >= 0; i--) {
-    const msg = conversationHistory[i];
-    const text = msg?.text || msg?.content || '';
-    const m = String(text).match(emailRegex);
-    if (m) return m[0];
+
+/* ---------- currency normalization ---------- */
+const CURRENCY_WORD_TO_ISO = new Map([
+  ['gbp', 'GBP'], ['pound', 'GBP'], ['pounds', 'GBP'], ['sterling', 'GBP'],
+  ['usd', 'USD'], ['dollar', 'USD'], ['dollars', 'USD'], ['us dollars', 'USD'],
+  ['eur', 'EUR'], ['euro', 'EUR'], ['euros', 'EUR'],
+  ['ngn', 'NGN'], ['naira', 'NGN'],
+  ['cad', 'CAD'], ['aud', 'AUD'], ['inr', 'INR'], ['jpy', 'JPY'],
+]);
+const CURRENCY_SYMBOL_TO_ISO = new Map([
+  ['£', 'GBP'], ['$', 'USD'], ['€', 'EUR'], ['₦', 'NGN'], ['¥', 'JPY'],
+]);
+
+function normalizeCurrency(input) {
+  if (!input) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+  const iso = raw.toUpperCase();
+  if (/^[A-Z]{3}$/.test(iso)) return iso;
+  const sym = CURRENCY_SYMBOL_TO_ISO.get(raw[0]);
+  if (sym) return sym;
+  const word = raw.toLowerCase().replace(/[^a-z]/g, ' ').trim();
+  if (!word) return null;
+  if (CURRENCY_WORD_TO_ISO.has(word)) return CURRENCY_WORD_TO_ISO.get(word);
+  for (const t of word.split(/\s+/)) {
+    if (CURRENCY_WORD_TO_ISO.has(t)) return CURRENCY_WORD_TO_ISO.get(t);
   }
   return null;
 }
 
+function detectCurrencyFromText(text) {
+  if (!text) return null;
+  const sym = text.match(/[£€$₦¥]/);
+  if (sym && CURRENCY_SYMBOL_TO_ISO.has(sym[0])) return CURRENCY_SYMBOL_TO_ISO.get(sym[0]);
+  const w = text.toLowerCase();
+  for (const key of CURRENCY_WORD_TO_ISO.keys()) {
+    if (w.includes(key)) return CURRENCY_WORD_TO_ISO.get(key);
+  }
+  return null;
+}
+
+function coerceValidCurrency(draft, userText, fallback = 'GBP') {
+  let iso = normalizeCurrency(draft.currency) || detectCurrencyFromText(userText) || fallback;
+  if (!iso) iso = fallback;
+  draft.currency = iso;
+  return draft;
+}
+
+/* ---------- parsing helpers (no regex for amount/description) ---------- */
 // Treat placeholders as missing.
 const BAD_CLIENT_TOKENS = new Set([
   'null','undefined','n/a','na','none','-','--','""',"''",
@@ -56,130 +91,40 @@ function isMissingClientName(v) {
   return !low || BAD_CLIENT_TOKENS.has(low) || low === 'client name';
 }
 
-// Prefer the longest numeric chunk, then strip commas/spaces.
-const moneyRegex = /(?:(?:£|\$|€|ngn|₦)\s*)?(\d+(?:[,\s]\d{3})*(?:\.\d{1,2})?)/i;
-function parseAmountFromText(text) {
-  if (!text) return undefined;
-  const m = String(text).match(moneyRegex);
-  if (!m) return undefined;
-  const raw = m[1].replace(/[,\s]/g, '');
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  return n;
-}
-
-// Safer client extraction.
-const CURRENCY_WORDS = /(pounds?|usd|gbp|eur|ngn|dollars?|naira)/i;
-const WORK_NOUNS = /\b(replacement|fixing|fitting|repair|installation|install|service|services|maintenance|supplies|tiles?)\b/i;
-
-function parseClientFromText(text) {
-  if (!text) return undefined;
-  const s = String(text);
-
-  if (/^\s*(change|set|update)\s+description\b/i.test(s) || /\bdescription\s*[:=]/i.test(s)) {
-    return undefined;
-  }
-
-  const explicit = s.match(/\b(?:client|customer)\s*[:\-]\s*([A-Z][A-Za-z0-9 .,&'-]{1,60})/i);
-  if (explicit?.[1]) {
-    const cand = explicit[1].split(/\s+/).slice(0, 4).join(' ').trim();
-    if (!CURRENCY_WORDS.test(cand) && !/\d/.test(cand) && /^[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3}$/.test(cand)) {
-      return cand;
-    }
-  }
-
-  const forName = s.match(/\bfor\s+([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3})(?=[\s.,]|$)/i);
-  if (forName?.[1]) {
-    const cand = forName[1].trim();
-    if (!CURRENCY_WORDS.test(cand) && !/\d/.test(cand) && !WORK_NOUNS.test(cand)) {
-      return cand;
-    }
-  }
-  return undefined;
-}
-
-// Ignore boilerplate descriptions like "help me/create/make an invoice", numeric-only, or currency-only lines.
-const IGNORE_DESC = [
-  /^\s*help\s+me\s+(?:create|make|generate|raise)\s+an?\s+invoice\b/i,
-  /^\s*(?:create|make|generate|raise)\s+an?\s+invoice\b/i,
-  /^\s*(?:create|make|generate|raise)\s+invoice\b/i,
-  /^\s*(?:send|prepare)\s+an?\s+invoice\b/i,
-  /^\s*invoice\s+for\b/i,
-  /^\s*create\b/i
-];
-
-function parseDescriptionFromText(text) {
-  if (!text) return undefined;
-  const trimmed = text.trim();
-
-  if (/^(yes|no|ok|okay|sure|proceed)\.?$/i.test(trimmed)) return undefined;
-
-  if (/\b(client|customer|amount|total|currency|pounds?|gbp|usd|eur|naira|ngn)\b/i.test(trimmed)) {
-    const labeled = trimmed.match(/\b(?:description|work|details)\s*[:\-]\s*([\s\S]{4,})$/i);
-    return labeled ? labeled[1].trim() : undefined;
-  }
-
-  for (const rx of IGNORE_DESC) {
-    if (rx.test(trimmed)) return undefined;
-  }
-
-  const hasLetters = /[A-Za-z]/.test(trimmed);
-  const hasDigits = /\d/.test(trimmed);
-  const hasCurrencyWord = CURRENCY_WORDS.test(trimmed) || /[£$€₦]/.test(trimmed);
-  if (!hasLetters) return undefined;
-  if (hasDigits && !/\b(replace|repair|install|installation|fix|service|maintain|clean|consult|audit|design|build|fit|paint|deliver|setup|set\s*up|configure)\b/i.test(trimmed)) {
-    return undefined;
-  }
-
-  const m = trimmed.match(/\b(?:description|work|details)\s*[:\-]\s*([\s\S]{4,})$/i);
-  if (m?.[1]) return m[1].trim();
-
-  if (!hasCurrencyWord && trimmed.length >= 6) return trimmed;
-
-  return undefined;
-}
-
-// ----- parse modification commands
+/** Only route-level parsing: detect intent to update and simple client/currency phrases. */
 function parseModificationFromText(text) {
   if (!text) return {};
   const s = String(text).trim();
-
   const patch = {};
 
-  const amt1 = s.match(/\b(?:set|change|update)\s+(?:the\s+)?amount(?:\s+to|=)?\s*([£$€₦]?\s*\d[\d,\s]*(?:\.\d{1,2})?)/i);
-  const amt2 = s.match(/\bamount\s*(?:is|=|:)\s*([£$€₦]?\s*\d[\d,\s]*(?:\.\d{1,2})?)/i);
-  if (amt1?.[1] || amt2?.[1]) {
-    const raw = (amt1?.[1] || amt2?.[1]).replace(/[,\s]/g, '');
-    const n = Number(raw.replace(/[£$€₦]/g, ''));
-    if (Number.isFinite(n) && n > 0) patch.amount = n;
+  // Currency hints like "in naira" or "currency: GBP"
+  const cur1 = s.match(/\bcurrency\s*(?:is|=|:)\s*([A-Za-z£$€₦]+)\b/i);
+  const cur2 = s.match(/\b(?:in|to)\s+(naira|pounds?|dollars?|euros?|gbp|usd|eur|ngn)\b/i);
+  const cur3 = detectCurrencyFromText(s);
+  const curRaw = (cur1?.[1] || cur2?.[1] || cur3 || '').trim();
+  if (curRaw) {
+    const iso = normalizeCurrency(curRaw);
+    if (iso) patch.currency = iso;
   }
 
+  // Client explicit command
   const cl1 = s.match(/\b(?:set|change|update)\s+(?:the\s+)?(?:client|customer)(?:\s+name)?(?:\s+to|=)\s*([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3})/i);
   const cl2 = s.match(/\b(?:client|customer)\s*(?:is|=|:)\s*([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3})/i);
-  if (cl1?.[1] || cl2?.[1]) {
-    const cand = (cl1?.[1] || cl2?.[1]).trim();
-    if (!CURRENCY_WORDS.test(cand) && !/\d/.test(cand) && !WORK_NOUNS.test(cand)) {
-      patch.clientName = cand;
-    }
-  }
+  if (cl1?.[1] || cl2?.[1]) patch.clientName = (cl1?.[1] || cl2?.[1]).trim();
 
-  const d1 = s.match(/\b(?:set|change|update)\s+description(?:\s+to|=)\s*["']?([\s\S]+?)["']?$/i);
-  const d2 = s.match(/^description\s*[:=]\s*([\s\S]+)$/i);
-  if (d1?.[1] || d2?.[1]) {
-    const desc = (d1?.[1] || d2?.[1]).trim();
-    if (desc && !/^create\s+an?\s+invoice/i.test(desc)) patch.description = desc;
-  }
+  // Generic "modify/update/edit invoice"
+  if (/\b(modify|update|edit)\b.*\binvoice\b/i.test(s)) patch.__wantsUpdate = true;
 
   return patch;
 }
 
-// ---------- AI extraction ----------
+/* ---------- AI extraction ---------- */
 async function aiExtractStructure({ model, userMessage, conversationHistory }) {
   const schemaPrompt = `
 You are an information extractor. Return ONLY a compact JSON object:
 
 {
-  "action": "none" | "create_invoice" | "send_invoice" | "create_event" | "update_event" | "create_task" | "fetch_data",
+  "action": "none" | "create_invoice" | "update_invoice" | "send_invoice" | "create_event" | "update_event" | "create_task" | "fetch_data",
   "intent": string,
   "needsClarification": false | { "question": string, "options": string[] },
   "params": {
@@ -195,8 +140,10 @@ You are an information extractor. Return ONLY a compact JSON object:
 }
 
 Rules:
-- If the user asks to create or send an invoice, set action accordingly.
+- If the user asks to create an invoice, set action=create_invoice.
+- If the user asks to modify/update/edit an existing invoice, set action=update_invoice.
 - Extract amounts and descriptions into lineItems. Do not sum.
+- If user provides "Amount 5000" and "description: ..." in same message, keep them together in lineItems.
 - Convert textual dates to YYYY-MM-DD where possible.
 - Use null for unknowns. No code fences.`.trim();
 
@@ -222,7 +169,7 @@ Rules:
   return tryParseJSON(raw);
 }
 
-// ---------- intent resolution ----------
+/* ---------- intent resolution ---------- */
 function resolveIntent(parsed, aiResponseRaw) {
   if (!parsed) return 'chat_fallback';
   if (parsed.needsClarification) return 'clarification';
@@ -232,11 +179,10 @@ function resolveIntent(parsed, aiResponseRaw) {
   return aiResponseRaw ? 'chat' : 'unknown';
 }
 
-// ---------- description suggestion from tasks/events for a specific client ----------
+/* ---------- description suggestion from tasks/events ---------- */
 function pickDescriptionForClient(events = [], tasks = [], clientName = '') {
   if (!clientName || isMissingClientName(clientName)) return null;
   const needle = clientName.toLowerCase();
-
   const candidates = [];
 
   for (const t of tasks) {
@@ -278,7 +224,7 @@ async function suggestDescriptionFromUserData(userId, clientName) {
   }
 }
 
-// ---------- draft helpers ----------
+/* ---------- draft helpers ---------- */
 function setDraft(userId, patch) {
   const id = String(userId);
   const cur = invoiceDrafts.get(id) || {};
@@ -297,6 +243,13 @@ function setDraft(userId, patch) {
       if (cleaned && !/^create\s+an?\s+invoice/i.test(cleaned)) next.description = cleaned;
       continue;
     }
+    if (k === 'currency') {
+      const iso = normalizeCurrency(v);
+      if (iso) next.currency = iso;
+      continue;
+    }
+    if (k === '__wantsUpdate') { next.mode = 'update'; continue; }
+    if (k === 'invoiceId') { next.invoiceId = String(v); continue; }
     next[k] = v;
   }
 
@@ -304,32 +257,84 @@ function setDraft(userId, patch) {
   return next;
 }
 function getDraft(userId) { return invoiceDrafts.get(String(userId)) || {}; }
-function clearDraft(userId) { invoiceDrafts.delete(String(userId)); }
-function draftIsComplete(d) { return Boolean(d && !isMissingClientName(d.clientName) && d.description && d.amount > 0); }
+function draftIsComplete(d) {
+  return Boolean(d && !isMissingClientName(d.clientName) && d.description && d.amount > 0);
+}
+
+// Seed missing fields in the draft from the user's current invoice snapshot.
+function seedDraftFromCurrentInvoice(userId) {
+  const id = String(userId);
+  const cur = invoiceDrafts.get(id) || {};
+  const curInv = currentInvoiceByUser.get(id);
+  if (!curInv || !curInv.snapshot) return cur;
+
+  const seeded = { ...cur };
+  if (!seeded.invoiceId && curInv.id) seeded.invoiceId = curInv.id;
+  if (isMissingClientName(seeded.clientName) && curInv.snapshot.clientName) seeded.clientName = curInv.snapshot.clientName;
+  if (!(seeded.amount > 0) && curInv.snapshot.amount > 0) seeded.amount = curInv.snapshot.amount;
+  if (!seeded.description && curInv.snapshot.description) seeded.description = curInv.snapshot.description;
+  if (!seeded.currency && curInv.snapshot.currency) seeded.currency = normalizeCurrency(curInv.snapshot.currency) || 'GBP';
+  invoiceDrafts.set(id, seeded);
+  return seeded;
+}
 
 function renderConfirm(draft) {
   return [
     'Review:',
     `- Client: ${draft.clientName || '(missing)'}`,
-    `- Amount: ${draft.amount ?? '(missing)'}`,
+    `- Amount: ${draft.amount ?? '(missing)'} ${draft.currency ? `(${draft.currency})` : ''}`.trim(),
     `- Description: ${draft.description || '(missing)'}`,
     'Want to change anything? Say: "change client to Sam", "set amount to 650", or start a line with "description: ...".',
-    'Reply "yes" to create or "no" to edit.'
+    draft.mode === 'update'
+      ? 'Reply "yes" to update or "no" to edit.'
+      : 'Reply "yes" to create or "no" to edit.'
   ].join('\n');
 }
-
 function renderEditPrompt(draft) {
   return [
     'What should I change?',
-    `Current -> Client: ${draft.clientName || '(missing)'} | Amount: ${draft.amount ?? '(missing)'} | Description: ${draft.description || '(missing)'}`,
+    `Current -> Client: ${draft.clientName || '(missing)'} | Amount: ${draft.amount ?? '(missing)'} ${draft.currency ? `(${draft.currency})` : ''} | Description: ${draft.description || '(missing)'}`,
     'Example commands:',
     '- change client to Sam',
-    '- set amount to 650',
+    '- currency: GBP',
     '- description: Replace sink in bathroom'
   ].join('\n');
 }
+function renderCurrentLine(draft) {
+  return `Current -> Client: ${draft.clientName || '(missing)'} | Amount: ${draft.amount ?? '(missing)'} ${draft.currency ? `(${draft.currency})` : ''} | Description: ${draft.description || '(missing)'}`;
+}
 
-// ---------- main ----------
+/* ---------- merge AI extraction into draft on every turn ---------- */
+function mergeExtractionIntoDraft(uid, extracted, userMessage) {
+  if (!extracted || !extracted.params) return getDraft(uid);
+  const p = extracted.params;
+
+  const patch = {};
+  if (p.clientName !== undefined && p.clientName !== null) patch.clientName = p.clientName;
+  if (p.currency !== undefined && p.currency !== null) patch.currency = normalizeCurrency(p.currency) || p.currency;
+  if (p.description !== undefined && p.description !== null) patch.description = p.description;
+
+  // lineItems -> amount and candidate description
+  const items = Array.isArray(p.lineItems) ? p.lineItems.filter(li => li && typeof li.amount === 'number' && li.amount > 0) : [];
+  if (items.length) {
+    const sum = items.reduce((s, li) => s + (Number(li.amount) || 0), 0);
+    if (sum > 0) patch.amount = sum;
+    // If no top-level description but a single item has one, use it
+    if ((patch.description == null || String(patch.description).trim() === '') && items.length === 1) {
+      const d = (items[0].description || '').trim();
+      if (d.length >= 4) patch.description = d;
+    }
+  }
+
+  if (p.invoiceId) patch.invoiceId = String(p.invoiceId);
+  if (Object.keys(patch).length) setDraft(uid, patch);
+
+  // Ensure a valid currency on draft before using it
+  const snap = coerceValidCurrency(getDraft(uid), userMessage);
+  return snap;
+}
+
+/* ---------- main ---------- */
 /** Returns { finalResponse: string, actionResult: object|null } */
 exports.generateAIResponse = async (userId, userContext = {}, conversationHistory = [], userMessage = '') => {
   const formattedData = typeof formatDataForPrompt === 'function'
@@ -337,115 +342,126 @@ exports.generateAIResponse = async (userId, userContext = {}, conversationHistor
     : {};
 
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
+  const uid = String(userId);
   const lowerMsg = String(userMessage || '').trim().toLowerCase();
 
   // Early "no" -> show edit prompt
   if (/^no\.?$/.test(lowerMsg)) {
-    const snap = getDraft(userId);
+    seedDraftFromCurrentInvoice(uid);
+    const snap = coerceValidCurrency(getDraft(uid), userMessage);
     return { finalResponse: renderEditPrompt(snap), actionResult: null };
   }
 
-  // Early YES commit: execute immediately if draft complete
-  if (/^yes\.?$/.test(lowerMsg)) {
-    const draftSnap = getDraft(userId);
-    if (draftIsComplete(draftSnap)) {
-      let actionResult;
-      try {
-        actionResult = await handleActionRequest(userId, { action: 'create_invoice' }, draftSnap);
-      } catch (err) {
-        actionResult = { success: false, error: err?.message || String(err) };
-      }
-      if (actionResult?.success) {
-        const who = draftSnap.clientName;
-        clearDraft(userId);
-        return { finalResponse: `Invoice created for ${who}.`, actionResult };
-      }
-      return { finalResponse: `Could not create invoice: ${actionResult?.error || 'unknown error'}`, actionResult };
-    }
-    // If not complete, fall through.
-  }
-
-  // Parse inline modification intents first.
+  // Route-level parsing for modify/currency/client only
   const modPatch = parseModificationFromText(userMessage);
-  const didModify = Object.keys(modPatch).length > 0;
-  if (didModify) {
-    const updated = setDraft(userId, modPatch);
-    return { finalResponse: renderConfirm(updated), actionResult: null };
+  if (Object.keys(modPatch).length > 0) {
+    seedDraftFromCurrentInvoice(uid);
+    const updated = setDraft(uid, modPatch);
+    if (updated.mode === 'update' && !updated.invoiceId) {
+      const curInv = currentInvoiceByUser.get(uid);
+      if (curInv?.id) setDraft(uid, { invoiceId: curInv.id });
+    }
   }
 
-  // 1) Extract with AI
+  // 1) AI extract every turn and merge into draft (amount + description come from AI only)
   let extracted = null;
   try {
     extracted = await aiExtractStructure({ model, userMessage, conversationHistory });
   } catch (err) {
-    console.log(`[ai-intent] extraction_error userId=${userId} message=${JSON.stringify(err?.message || 'Extraction failed')}`);
+    console.log(`[ai-intent] extraction_error userId=${uid} message=${JSON.stringify(err?.message || 'Extraction failed')}`);
   }
 
-  // 2) Merge incremental info from raw text into draft (guarded)
-  const textAmount = parseAmountFromText(userMessage);
-  const textClient = parseClientFromText(userMessage);
-  const textDesc = parseDescriptionFromText(userMessage);
+  // Always seed from current invoice first so updates inherit missing fields
+  seedDraftFromCurrentInvoice(uid);
+  const draftAfterMerge = mergeExtractionIntoDraft(uid, extracted, userMessage);
 
-  if (textAmount || textClient || textDesc) {
-    const patch = {};
-    const isDescCommand = /^\s*(change|set|update)\s+description\b/i.test(userMessage) || /\bdescription\s*[:=]/i.test(userMessage);
-
-    if (!isDescCommand && textAmount) patch.amount = textAmount;
-    if (!isDescCommand && textClient) patch.clientName = textClient;
-    if (textDesc) patch.description = textDesc;
-
-    if (Object.keys(patch).length) {
-      setDraft(userId, patch);
-      console.log(`[draft] merged from free text userId=${userId} patch=${safeStringify(patch)}`);
+  // Early YES commit
+  if (/^yes\.?$/.test(lowerMsg)) {
+    // Update path
+    if (draftAfterMerge.mode === 'update' && draftAfterMerge.invoiceId) {
+      let actionResult;
+      try {
+        actionResult = await handleActionRequest(uid, { action: 'update_invoice' }, draftAfterMerge);
+      } catch (err) {
+        actionResult = { success: false, error: err?.message || String(err) };
+      }
+      if (actionResult?.success) {
+        currentInvoiceByUser.set(uid, {
+          id: draftAfterMerge.invoiceId,
+          snapshot: {
+            clientName: draftAfterMerge.clientName,
+            amount: draftAfterMerge.amount,
+            description: draftAfterMerge.description,
+            currency: draftAfterMerge.currency
+          }
+        });
+        invoiceDrafts.set(uid, { mode: 'update', invoiceId: draftAfterMerge.invoiceId, ...currentInvoiceByUser.get(uid).snapshot });
+        return { finalResponse: `Invoice updated for ${draftAfterMerge.clientName}.`, actionResult };
+      }
+      return { finalResponse: `Could not update invoice: ${actionResult?.error || 'unknown error'}`, actionResult };
     }
+
+    // Create path
+    if (draftIsComplete(draftAfterMerge)) {
+      let actionResult;
+      try {
+        actionResult = await handleActionRequest(uid, { action: 'create_invoice' }, draftAfterMerge);
+      } catch (err) {
+        actionResult = { success: false, error: err?.message || String(err) };
+      }
+      if (actionResult?.success) {
+        const who = draftAfterMerge.clientName;
+        const createdId = actionResult?.data?._id || actionResult?.data?.id || actionResult?.data?.invoiceId || null;
+        currentInvoiceByUser.set(uid, {
+          id: createdId,
+          snapshot: {
+            clientName: actionResult?.data?.clientName ?? draftAfterMerge.clientName,
+            amount: actionResult?.data?.amount ?? draftAfterMerge.amount,
+            description: actionResult?.data?.description ?? draftAfterMerge.description,
+            currency: normalizeCurrency(actionResult?.data?.currency) || draftAfterMerge.currency || 'GBP'
+          }
+        });
+        invoiceDrafts.set(uid, { mode: 'update', invoiceId: createdId, ...currentInvoiceByUser.get(uid).snapshot });
+        return { finalResponse: `Invoice created for ${who}.`, actionResult };
+      }
+      return { finalResponse: `Could not create invoice: ${actionResult?.error || 'unknown error'}`, actionResult };
+    }
+    // Fall through if not complete.
   }
 
-  // 3) Snapshot
+  // 2) Intent resolution (for messaging only)
   const intent = resolveIntent(extracted, null);
   console.log(
-    `[ai-intent] userId=${userId} intent=${intent}` +
+    `[ai-intent] userId=${uid} intent=${intent}` +
     ` params=${extracted?.params ? safeStringify(extracted.params) : '{}'}` +
     ` needsClarification=${Boolean(extracted?.needsClarification)}` +
     ` action=${extracted?.action || 'none'}`
   );
 
-  // 4) Clarification path — be explicit about what is missing
-  if (extracted && extracted.needsClarification && extracted.needsClarification !== false) {
-    const action = extracted.action || 'none';
-    let draft = getDraft(userId);
+  // 3) Clarify or confirm
+  if (extracted && extracted.action && (extracted.action === 'create_invoice' || extracted.action === 'update_invoice')) {
+    // Put in update mode if asked to update
+    if (extracted.action === 'update_invoice') setDraft(uid, { mode: 'update' });
 
-    // Merge any AI-parsed params to help compute missing fields
-    const incoming = extracted.params || {};
-    const lineItems = Array.isArray(incoming.lineItems)
-      ? incoming.lineItems.filter(li => li && typeof li.amount === 'number' && li.amount > 0)
-      : [];
-    const items = lineItems.map(li => ({ description: li.description || 'Item', quantity: 1, unitAmount: Number(li.amount) }));
-    const extractedTotal = lineItems.reduce((s, li) => s + (Number(li.amount) || 0), 0);
-
-    const patch = {};
-    if (incoming.clientName != null) patch.clientName = incoming.clientName;
-    if (incoming.description != null) patch.description = incoming.description;
-    if (items.length) patch.items = items;
-    if (extractedTotal > 0) patch.amount = extractedTotal;
-
-    if (Object.keys(patch).length) draft = setDraft(userId, patch);
-
-    if (action === 'create_invoice') {
-      // Try suggesting a description if client present but description missing
-      if (!isMissingClientName(draft.clientName) && !draft.description && !draft.suggestedDescription) {
-        const hit = await suggestDescriptionFromUserData(userId, draft.clientName);
-        if (hit?.text) {
-          draft = setDraft(userId, { suggestedDescription: hit.text, suggestedWhy: `Found in your ${hit.source} titled "${hit.title}".` });
-        }
+    // Suggest description if client is present but no desc yet
+    let draft = getDraft(uid);
+    if (!isMissingClientName(draft.clientName) && !draft.description && !draft.suggestedDescription) {
+      const hit = await suggestDescriptionFromUserData(uid, draft.clientName);
+      if (hit?.text) {
+        draft = setDraft(uid, { suggestedDescription: hit.text, suggestedWhy: `Found in your ${hit.source} titled "${hit.title}".` });
       }
+    }
 
-      const missing = [];
-      if (isMissingClientName(draft.clientName)) missing.push('client name');
-      if (!(draft.amount > 0)) missing.push('amount');
-      if (!draft.description) missing.push('description');
+    // Ensure valid currency
+    draft = coerceValidCurrency(getDraft(uid), userMessage);
 
-      const lines = ['Let’s finish the invoice:'];
+    const missing = [];
+    if (isMissingClientName(draft.clientName)) missing.push('client name');
+    if (!(draft.amount > 0)) missing.push('amount');
+    if (!draft.description) missing.push('description');
+
+    if (missing.length) {
+      const lines = ['Let’s finish the invoice:', renderCurrentLine(draft)];
       if (isMissingClientName(draft.clientName)) lines.push('- Who is the client?');
       if (!(draft.amount > 0)) lines.push('- What is the total amount? Example: "£650" or "650".');
       if (!draft.description) {
@@ -457,121 +473,77 @@ exports.generateAIResponse = async (userId, userContext = {}, conversationHistor
           lines.push('- Add a short description of the work done.');
         }
       }
+      lines.push('- Optionally set currency. Example: "currency: GBP" or "in naira".');
       lines.push('You can also modify any field: "change client to Sam", "set amount to 650", or start a line with "description: ...".');
-
       return { finalResponse: lines.join('\n'), actionResult: null };
     }
 
-    // Other actions fall back to the model’s question but never "Need more information."
-    const q = extracted.needsClarification.question || 'Specify the missing fields.';
-    const opts = Array.isArray(extracted.needsClarification.options) ? extracted.needsClarification.options : [];
-    let msg = extracted.response || q;
-    if (opts.length) msg += `\n\nOptions:\n${opts.map((o, i) => `${i + 1}. ${o}`).join('\n')}`;
-    return { finalResponse: msg, actionResult: null };
+    return { finalResponse: renderConfirm(draft), actionResult: null };
   }
 
-  // 5) Action path
-  if (extracted && extracted.action && extracted.action !== 'none') {
-    const incoming = extracted.params || {};
-
-    const lineItems = Array.isArray(incoming.lineItems)
-      ? incoming.lineItems.filter(li => li && typeof li.amount === 'number' && li.amount > 0)
-      : [];
-    const items = lineItems.map(li => ({ description: li.description || 'Item', quantity: 1, unitAmount: Number(li.amount) }));
-    const extractedTotal = lineItems.reduce((s, li) => s + (Number(li.amount) || 0), 0);
-
-    const patch = {};
-    if (incoming.clientName !== undefined && incoming.clientName !== null) patch.clientName = incoming.clientName;
-    if (incoming.description !== undefined && incoming.description !== null) patch.description = incoming.description;
-    if (incoming.currency) patch.currency = incoming.currency;
-    if (incoming.invoiceDate) patch.date = incoming.invoiceDate;
-    if (incoming.dueDate) patch.dueDate = incoming.dueDate;
-    if (incoming.email) patch.email = incoming.email;
-    if (items.length) patch.items = items;
-    if (extractedTotal > 0) patch.amount = extractedTotal;
-
-    let draft = setDraft(userId, patch);
-
-    // Suggest description only if client present but description missing
-    if (extracted.action === 'create_invoice' && !isMissingClientName(draft.clientName) && !draft.description) {
-      const hit = await suggestDescriptionFromUserData(userId, draft.clientName);
-      if (hit?.text) {
-        draft = setDraft(userId, { suggestedDescription: hit.text, suggestedWhy: `Found in your ${hit.source} titled "${hit.title}".` });
-      }
-    }
-
-    if (extracted.action === 'create_invoice') {
-      const missing = [];
-      if (isMissingClientName(draft.clientName)) missing.push('client name');
-      if (!(draft.amount > 0)) missing.push('amount');
-      if (!draft.description) missing.push('description');
-
-      if (missing.length) {
-        const lines = ['Let’s finish the invoice:'];
-        if (isMissingClientName(draft.clientName)) lines.push('- Who is the client?');
-        if (!(draft.amount > 0)) lines.push('- What is the total amount? Example: "£650" or "650".');
-        if (!draft.description) {
-          if (draft.suggestedDescription) {
-            lines.push(`- Suggested description: "${draft.suggestedDescription}"`);
-            if (draft.suggestedWhy) lines.push(`  Reason: ${draft.suggestedWhy}`);
-            lines.push('  Reply "yes" to use it or send your own.');
-          } else {
-            lines.push('- Add a short description of the work done.');
-          }
-        }
-        lines.push('You can also modify any field: "change client to Sam", "set amount to 650", or start a line with "description: ...".');
-        return { finalResponse: lines.join('\n'), actionResult: null };
-      }
-
-      return { finalResponse: renderConfirm(draft), actionResult: null };
-    }
-
-    // Non-create actions
-    console.log(`[ai-intent] executing action=${extracted.action} params=${safeStringify(draft)}`);
-    let actionResult;
-    try {
-      actionResult = await handleActionRequest(userId, { action: extracted.action }, draft);
-    } catch (err) {
-      actionResult = { success: false, error: err?.message || String(err) };
-    }
-    const finalResponse = actionResult?.success
-      ? (extracted.response || 'Action completed successfully.')
-      : `Could not complete action: ${actionResult?.error || 'unknown error'}`;
-    return { finalResponse, actionResult };
-  }
-
-  // 6) Chat path + incremental guidance
-  let draft = getDraft(userId);
+  // 4) If we already have a partially filled draft, guide
+  let draft = getDraft(uid);
 
   if (!draft.description && draft.suggestedDescription && /^yes\.?$/.test(lowerMsg)) {
-    draft = setDraft(userId, { description: draft.suggestedDescription });
+    draft = setDraft(uid, { description: draft.suggestedDescription });
+    draft = coerceValidCurrency(draft, userMessage);
     return { finalResponse: renderConfirm(draft), actionResult: null };
   }
 
   if (/^yes\.?$/.test(lowerMsg) && draftIsComplete(draft)) {
+    draft = coerceValidCurrency(draft, userMessage);
+    if (draft.mode === 'update' && draft.invoiceId) {
+      let actionResult;
+      try {
+        actionResult = await handleActionRequest(uid, { action: 'update_invoice' }, draft);
+      } catch (err) {
+        actionResult = { success: false, error: err?.message || String(err) };
+      }
+      if (actionResult?.success) {
+        currentInvoiceByUser.set(uid, {
+          id: draft.invoiceId,
+          snapshot: { clientName: draft.clientName, amount: draft.amount, description: draft.description, currency: draft.currency }
+        });
+        invoiceDrafts.set(uid, { mode: 'update', invoiceId: draft.invoiceId, ...currentInvoiceByUser.get(uid).snapshot });
+        return { finalResponse: `Invoice updated for ${draft.clientName}.`, actionResult };
+      }
+      return { finalResponse: `Could not update invoice: ${actionResult?.error || 'unknown error'}`, actionResult };
+    }
+
     let actionResult;
     try {
-      actionResult = await handleActionRequest(userId, { action: 'create_invoice' }, draft);
+      actionResult = await handleActionRequest(uid, { action: 'create_invoice' }, draft);
     } catch (err) {
       actionResult = { success: false, error: err?.message || String(err) };
     }
     if (actionResult?.success) {
       const who = draft.clientName;
-      clearDraft(userId);
+      const createdId = actionResult?.data?._id || actionResult?.data?.id || actionResult?.data?.invoiceId || null;
+      currentInvoiceByUser.set(uid, {
+        id: createdId,
+        snapshot: {
+          clientName: actionResult?.data?.clientName ?? draft.clientName,
+          amount: actionResult?.data?.amount ?? draft.amount,
+          description: actionResult?.data?.description ?? draft.description,
+          currency: normalizeCurrency(actionResult?.data?.currency) || draft.currency || 'GBP'
+        }
+      });
+      invoiceDrafts.set(uid, { mode: 'update', invoiceId: createdId, ...currentInvoiceByUser.get(uid).snapshot });
       return { finalResponse: `Invoice created for ${who}.`, actionResult };
     }
     return { finalResponse: `Could not create invoice: ${actionResult?.error || 'unknown error'}`, actionResult };
   }
 
-  if (draft.clientName || draft.amount || draft.description || draft.suggestedDescription) {
+  if (draft.clientName || draft.amount || draft.description || draft.suggestedDescription || draft.currency) {
+    draft = coerceValidCurrency(draft, userMessage);
     const missing = [];
     if (isMissingClientName(draft.clientName)) missing.push('client name');
     if (!(draft.amount > 0)) missing.push('amount');
     if (!draft.description) missing.push('description');
 
     if (missing.length) {
-      const lines = [];
-      lines.push(`Still need: ${missing.join(', ')}.`);
+      const lines = ['Let’s finish the invoice:', renderCurrentLine(draft)];
+      lines.push(`Missing: ${missing.join(', ')}.`);
       if (isMissingClientName(draft.clientName)) lines.push('Who is the client?');
       if (!(draft.amount > 0)) lines.push('Total amount to bill?');
       if (!draft.description) {
@@ -583,6 +555,7 @@ exports.generateAIResponse = async (userId, userContext = {}, conversationHistor
           lines.push('Add a short description.');
         }
       }
+      lines.push('- Optionally set currency. Example: "currency: GBP" or "in naira".');
       lines.push('You can also modify any field: "change client to Sam", "set amount to 650", or start a line with "description: ...".');
       return { finalResponse: lines.join('\n'), actionResult: null };
     }
@@ -590,9 +563,9 @@ exports.generateAIResponse = async (userId, userContext = {}, conversationHistor
     return { finalResponse: renderConfirm(draft), actionResult: null };
   }
 
-  const prompt = extracted?.response || userMessage || 'How can I help?';
+  const prompt = (extracted && extracted.response) || userMessage || 'How can I help?';
   try {
-    const actionResult = await handleActionRequest(userId, { type: 'chat' }, { prompt });
+    const actionResult = await handleActionRequest(uid, { type: 'chat' }, { prompt });
     const finalResponse = actionResult?.success ? (actionResult.response || prompt) : prompt;
     return { finalResponse, actionResult };
   } catch {
